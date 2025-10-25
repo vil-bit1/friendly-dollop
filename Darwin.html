@@ -1,0 +1,181 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Bouncing Ball</title>
+  <style>
+    :root{--bg:#0f1724;--ball:#f97316}
+    html,body{height:100%;margin:0}
+    body{
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(180deg,#071024 0%,#0a1830 100%);
+      font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;
+      color:#cbd5e1
+    }
+    .wrap{width:min(900px,96vw);height:70vh;background:rgba(255,255,255,0.02);border-radius:12px;box-shadow:0 6px 30px rgba(2,6,23,0.6);position:relative;overflow:hidden}
+    canvas{display:block;width:100%;height:100%}
+    .controls{position:absolute;left:12px;top:12px;display:flex;gap:8px}
+    button{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.06);color:inherit;padding:8px 10px;border-radius:8px}
+    .hint{position:absolute;right:12px;top:12px;padding:8px 10px;background:rgba(255,255,255,0.02);border-radius:8px;font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="c"></canvas>
+    <div class="controls">
+      <button id="pause">Pause</button>
+      <button id="reset">Reset</button>
+    </div>
+    <div class="hint">Tap/click canvas to give the ball a boost</div>
+  </div>  <script>
+    // Simple physics-based bouncing ball on an HTML canvas.
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+
+    let DPR = Math.max(1, window.devicePixelRatio || 1);
+    function resize(){
+      DPR = Math.max(1, window.devicePixelRatio || 1);
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width * DPR);
+      canvas.height = Math.floor(rect.height * DPR);
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+    }
+    window.addEventListener('resize', resize);
+
+    // Ball state
+    const ball = {
+      x: 100, y: 60,
+      r: 28,
+      vx: 120, // px/s
+      vy: 0,
+      color: getComputedStyle(document.documentElement).getPropertyValue('--ball') || '#f97316'
+    };
+
+    // Physics params
+    const gravity = 1100; // px/s^2 (increase for faster fall)
+    const damping = 0.78; // energy retained after bounce (0-1)
+    const friction = 0.998; // horizontal speed decay
+
+    let last = null;
+    let paused = false;
+
+    function step(ts){
+      if(!last) last = ts;
+      const dt = Math.min(0.05, (ts - last) / 1000); // seconds, clamp
+      last = ts;
+      if(!paused){
+        // integrate
+        ball.vy += gravity * dt;
+        ball.x += ball.vx * dt;
+        ball.y += ball.vy * dt;
+
+        // floor / ceiling collision
+        const w = canvas.width / DPR;
+        const h = canvas.height / DPR;
+
+        // bottom
+        if(ball.y + ball.r > h){
+          ball.y = h - ball.r;
+          if(Math.abs(ball.vy) > 0.5){
+            ball.vy = -ball.vy * damping;
+            // small horizontal impulse on bounce from imperfect surface
+            ball.vx *= Math.max(0.95, friction);
+          } else {
+            ball.vy = 0;
+          }
+        }
+        // top
+        if(ball.y - ball.r < 0){
+          ball.y = ball.r;
+          ball.vy = -ball.vy * damping;
+        }
+        // left/right walls
+        if(ball.x - ball.r < 0){
+          ball.x = ball.r;
+          ball.vx = -ball.vx * damping;
+        }
+        if(ball.x + ball.r > w){
+          ball.x = w - ball.r;
+          ball.vx = -ball.vx * damping;
+        }
+      }
+
+      draw();
+      requestAnimationFrame(step);
+    }
+
+    function draw(){
+      const w = canvas.width / DPR;
+      const h = canvas.height / DPR;
+      ctx.clearRect(0,0,w,h);
+
+      // simple shadow
+      const shadowY = Math.min(h - 10, ball.y + ball.r + 6);
+      const shadowScale = 1 - Math.min(0.9, (ball.y - ball.r) / (h - ball.r));
+      ctx.beginPath();
+      ctx.ellipse(ball.x, shadowY, ball.r * 0.9 * shadowScale, ball.r * 0.35 * shadowScale, 0, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(2,6,23,0.55)';
+      ctx.fill();
+
+      // ball
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+      // nice glossy gradient
+      const g = ctx.createRadialGradient(ball.x - ball.r*0.35, ball.y - ball.r*0.45, Math.max(2,ball.r*0.2), ball.x, ball.y, ball.r*1.2);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(0.15, ball.color.trim());
+      g.addColorStop(1, '#861400');
+      ctx.fillStyle = g;
+      ctx.fill();
+
+      // outline
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.stroke();
+    }
+
+    // initialize
+    function init(){
+      resize();
+      // place ball near top center
+      const w = canvas.width / DPR;
+      const h = canvas.height / DPR;
+      ball.x = w * 0.25;
+      ball.y = Math.max(ball.r + 10, h * 0.08);
+      ball.vx = 160 * (Math.random() > 0.5 ? 1 : -1);
+      ball.vy = 0;
+      last = null;
+    }
+
+    // Interactivity: click/tap to give upward boost
+    function giveBoost(clientX){
+      // convert clientX to canvas coords
+      const rect = canvas.getBoundingClientRect();
+      const cx = (clientX - rect.left) / rect.width * (canvas.width / DPR);
+      // horizontal push toward click
+      const dir = cx < ball.x ? -1 : 1;
+      ball.vy = Math.min(-520, ball.vy - 420); // strong upward kick
+      ball.vx += dir * 80;
+    }
+
+    canvas.addEventListener('pointerdown', (e)=>{
+      giveBoost(e.clientX);
+    }, {passive:true});
+
+    // Controls
+    document.getElementById('pause').addEventListener('click', function(){
+      paused = !paused;
+      this.textContent = paused ? 'Resume' : 'Pause';
+    });
+    document.getElementById('reset').addEventListener('click', ()=>{
+      init();
+      paused = false;
+      document.getElementById('pause').textContent = 'Pause';
+    });
+
+    init();
+    requestAnimationFrame(step);
+  </script></body>
+</html>
